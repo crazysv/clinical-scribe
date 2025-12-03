@@ -23,23 +23,20 @@ class MyApplication : Application() {
 
     private suspend fun initializeSDK() {
         try {
-            // Step 1: Initialize SDK
+            // BACK TO DEVELOPMENT MODE (No crash)
             RunAnywhere.initialize(
                 context = this@MyApplication,
-                apiKey = "dev",  // Any string works in dev mode
+                apiKey = "dev-key",
                 environment = SDKEnvironment.DEVELOPMENT
             )
 
-            // Step 2: Register LLM Service Provider
             LlamaCppServiceProvider.register()
 
-            // Step 3: Register Models
+            // WE WILL REGISTER MODELS MANUALLY BELOW
             registerModels()
 
-            // Step 4: Scan for previously downloaded models
             RunAnywhere.scanForDownloadedModels()
-
-            Log.i("MyApp", "SDK initialized successfully")
+            Log.i("MyApp", "SDK initialized successfully (Dev Mode)")
 
         } catch (e: Exception) {
             Log.e("MyApp", "SDK initialization failed: ${e.message}")
@@ -47,10 +44,17 @@ class MyApplication : Application() {
     }
 
     private suspend fun registerModels() {
-        // Medium-sized model - better quality (374 MB)
+        // Medium-sized model
         addModelFromURL(
             url = "https://huggingface.co/Triangle104/Qwen2.5-0.5B-Instruct-Q6_K-GGUF/resolve/main/qwen2.5-0.5b-instruct-q6_k.gguf",
             name = "Qwen 2.5 0.5B Instruct Q6_K",
+            type = "LLM"
+        )
+
+        // Phi-3-Mini
+        addModelFromURL(
+            url = "https://huggingface.co/bartowski/Phi-3-mini-128k-instruct-GGUF/resolve/main/Phi-3-mini-128k-instruct-Q4_K_M.gguf",
+            name = "Phi-3-Mini-128k-Instruct-Q4_K_M",
             type = "LLM"
         )
     }

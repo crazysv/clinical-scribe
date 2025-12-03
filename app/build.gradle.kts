@@ -1,8 +1,12 @@
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    kotlin("plugin.serialization") version "2.0.21"
+
+    // --- NEW: KSP Plugin (Required for Room Database) ---
+    // This version matches your Kotlin 2.0.21
+    id("com.google.devtools.ksp") version "2.0.21-1.0.25"
 }
 
 android {
@@ -77,9 +81,11 @@ dependencies {
     // AndroidX WorkManager (required by SDK)
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
-    // AndroidX Room (required by SDK)
+    // AndroidX Room (Database Support)
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
+    // --- NEW: Room Compiler (Required to generate database code) ---
+    ksp("androidx.room:room-compiler:2.6.1")
 
     // AndroidX Security (required by SDK)
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
@@ -101,4 +107,8 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    implementation("com.google.zxing:core:3.5.2")
+
+    // Icon Extended (Added earlier for UI)
+    implementation("androidx.compose.material:material-icons-extended:1.7.5")
 }

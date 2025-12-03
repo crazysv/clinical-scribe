@@ -1,288 +1,295 @@
 package com.runanywhere.startup_hackathon20
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.* // <--- FIXES "getValue" ERRORS
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.runanywhere.startup_hackathon20.ui.theme.Startup_hackathon20Theme
+import kotlinx.serialization.json.Json
+import java.text.SimpleDateFormat
+import java.util.*
+
+// --- COLORS ---
+object MedColors {
+    val Primary = Color(0xFF2563EB)
+    val Background = Color(0xFFF8FAFC)
+    val Surface = Color(0xFFFFFFFF)
+    val TextDark = Color(0xFF1E293B)
+    val TextGray = Color(0xFF64748B)
+}
 
 class MainActivity : ComponentActivity() {
+    private val cameraLauncher = registerForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+        if (bitmap != null) {
+            Toast.makeText(this, "Photo captured!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
         setContent {
-            Startup_hackathon20Theme {
-                ChatScreen()
+            MaterialTheme {
+                ScribeScreen(cameraLauncher)
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
-    val messages by viewModel.messages.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val availableModels by viewModel.availableModels.collectAsState()
-    val downloadProgress by viewModel.downloadProgress.collectAsState()
-    val currentModelId by viewModel.currentModelId.collectAsState()
-    val statusMessage by viewModel.statusMessage.collectAsState()
+fun ScribeScreen(cameraLauncher: androidx.activity.result.ActivityResultLauncher<Void?>) {
+    val viewModel: ScribeViewModel = viewModel()
 
-    var inputText by remember { mutableStateOf("") }
-    var showModelSelector by remember { mutableStateOf(false) }
+    // Collecting State
+    val report by viewModel.report.collectAsState()
+    val isGenerating by viewModel.isGenerating.collectAsState()
+    val currentLanguage by viewModel.targetLanguage.collectAsState()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("AI Chat") },
-                actions = {
-                    TextButton(onClick = { showModelSelector = !showModelSelector }) {
-                        Text("Models")
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            // Status bar
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                tonalElevation = 2.dp
+    var showHistory by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxSize().background(MedColors.Background)) {
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = statusMessage,
-                        style = MaterialTheme.typography.bodyMedium
+                Column {
+                    Text("SCRIBE", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MedColors.Primary, letterSpacing = 2.sp)
+                    Text("AI Medical Assistant", fontSize = 20.sp, fontWeight = FontWeight.Black, color = MedColors.TextDark)
+                }
+                IconButton(onClick = { showHistory = true }) {
+                    Icon(Icons.Rounded.History, "History", tint = MedColors.TextDark)
+                }
+            }
+
+            // Language
+            Row(modifier = Modifier.padding(horizontal = 24.dp)) {
+                listOf("English", "Spanish", "Hindi").forEach { lang ->
+                    FilterChip(
+                        selected = currentLanguage == lang,
+                        onClick = { viewModel.setLanguage(lang) },
+                        label = { Text(lang) },
+                        modifier = Modifier.padding(end = 8.dp)
                     )
-                    downloadProgress?.let { progress ->
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp)
-                        )
-                    }
                 }
             }
 
-            // Model selector (collapsible)
-            if (showModelSelector) {
-                ModelSelector(
-                    models = availableModels,
-                    currentModelId = currentModelId,
-                    onDownload = { modelId -> viewModel.downloadModel(modelId) },
-                    onLoad = { modelId -> viewModel.loadModel(modelId) },
-                    onRefresh = { viewModel.refreshModels() }
-                )
-            }
+            Spacer(modifier = Modifier.height(32.dp))
 
-            // Messages List
-            val listState = rememberLazyListState()
-
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(messages) { message ->
-                    MessageBubble(message)
-                }
-            }
-
-            // Auto-scroll to bottom when new messages arrive
-            LaunchedEffect(messages.size) {
-                if (messages.isNotEmpty()) {
-                    listState.animateScrollToItem(messages.size - 1)
-                }
-            }
-
-            // Input Field
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                TextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Type a message...") },
-                    enabled = !isLoading && currentModelId != null
-                )
-
+            // Record Button
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth()) {
                 Button(
-                    onClick = {
-                        if (inputText.isNotBlank()) {
-                            viewModel.sendMessage(inputText)
-                            inputText = ""
+                    onClick = { viewModel.generateReport("Dummy Audio") },
+                    modifier = Modifier.size(80.dp),
+                    shape = CircleShape,
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isGenerating) Color.Gray else MedColors.Primary)
+                ) {
+                    if (isGenerating) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                    } else {
+                        Icon(Icons.Rounded.Mic, "Record", modifier = Modifier.size(32.dp))
+                    }
+                }
+            }
+            Text("Tap to Record Consultation", modifier = Modifier.fillMaxWidth().padding(top = 16.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MedColors.TextGray)
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Report Card
+            AnimatedVisibility(visible = report != null) {
+                report?.let { safeReport ->
+                    ResultCard(
+                        report = safeReport,
+                        viewModel = viewModel,
+                        onOpenCamera = { cameraLauncher.launch(null) },
+                        onEditClick = { showEditDialog = true }
+                    )
+                }
+            }
+        }
+
+        // History Dialog
+        if (showHistory) {
+            HistoryWindow(
+                viewModel = viewModel,
+                onDismiss = { showHistory = false },
+                onSelectReport = { selectedReport ->
+                    viewModel.loadReport(selectedReport)
+                    showHistory = false
+                }
+            )
+        }
+
+        // Edit Dialog
+        if (showEditDialog && report != null) {
+            EditReportDialog(
+                report = report!!,
+                onDismiss = { showEditDialog = false },
+                onSave = { name, diag, plan ->
+                    viewModel.updateReport(report!!, name, diag, plan)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun EditReportDialog(
+    report: MedicalReport,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String) -> Unit
+) {
+    var name by remember { mutableStateOf(report.patientName) }
+    var diagnosis by remember { mutableStateOf(report.diagnosis) }
+    var plan by remember { mutableStateOf(report.treatmentPlan.joinToString("\n")) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(24.dp).verticalScroll(rememberScrollState())) {
+                Text("Edit Report", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MedColors.TextDark)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Patient Name") }, modifier = Modifier.fillMaxWidth())
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(value = diagnosis, onValueChange = { diagnosis = it }, label = { Text("Diagnosis") }, modifier = Modifier.fillMaxWidth())
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(value = plan, onValueChange = { plan = it }, label = { Text("Plan (Lines)") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    Button(onClick = { onSave(name, diagnosis, plan); onDismiss() }) { Text("Save") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ResultCard(
+    report: MedicalReport,
+    viewModel: ScribeViewModel,
+    onOpenCamera: () -> Unit,
+    onEditClick: () -> Unit
+) {
+    val context = LocalContext.current
+    val currentLanguage by viewModel.targetLanguage.collectAsState()
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        shape = RoundedCornerShape(24.dp)
+    ) {
+        Column(modifier = Modifier.padding(24.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(UiTranslations.get("title", currentLanguage).uppercase(), fontSize = 12.sp, color = MedColors.TextGray, fontWeight = FontWeight.Bold)
+                    Text(report.patientName, fontSize = 24.sp, fontWeight = FontWeight.Black, color = MedColors.TextDark)
+                }
+                IconButton(onClick = onEditClick) { Icon(Icons.Default.Edit, "Edit", tint = MedColors.Primary) }
+                IconButton(onClick = onOpenCamera) { Icon(Icons.Rounded.CameraAlt, "Photo", tint = MedColors.Primary) }
+                IconButton(onClick = { PdfHelper.generateAndSharePdf(context, report) }) { Icon(Icons.Rounded.Share, "PDF", tint = MedColors.Primary) }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Vitals
+            Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                InfoChip(Icons.Rounded.Favorite, "${report.heartRate} BPM", Color(0xFFFFEBEE), Color(0xFFD32F2F))
+                Spacer(modifier = Modifier.width(8.dp))
+                InfoChip(Icons.Rounded.Thermostat, report.temperature, Color(0xFFFFF3E0), Color(0xFFF57C00))
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(UiTranslations.get("diagnosis", currentLanguage), fontWeight = FontWeight.Bold, color = MedColors.Primary)
+            Text(report.diagnosis, color = MedColors.TextDark)
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(UiTranslations.get("plan", currentLanguage), fontWeight = FontWeight.Bold, color = MedColors.Primary)
+            report.treatmentPlan.forEach { item ->
+                Text("• $item", color = MedColors.TextDark, modifier = Modifier.padding(vertical = 2.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun InfoChip(icon: ImageVector, text: String, bgColor: Color, iconColor: Color) {
+    Surface(color = bgColor, shape = RoundedCornerShape(8.dp)) {
+        Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+            Icon(icon, null, tint = iconColor, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(text, fontWeight = FontWeight.Bold, color = iconColor)
+        }
+    }
+}
+
+@Composable
+fun HistoryWindow(viewModel: ScribeViewModel, onDismiss: () -> Unit, onSelectReport: (MedicalReport) -> Unit) {
+    val historyList by viewModel.historyList.collectAsState()
+    val json = Json { ignoreUnknownKeys = true }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(modifier = Modifier.fillMaxWidth().height(500.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("History", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                LazyColumn {
+                    items(historyList) { item ->
+                        val date = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(item.timestamp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(4.dp).clickable {
+                                try {
+                                    val report = json.decodeFromString<MedicalReport>(item.fullReportJson)
+                                    onSelectReport(report)
+                                } catch (e: Exception) { e.printStackTrace() }
+                            },
+                            colors = CardDefaults.cardColors(containerColor = MedColors.Background)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(item.patientName, fontWeight = FontWeight.Bold)
+                                Text(item.diagnosis, fontSize = 12.sp)
+                                Text(date, fontSize = 10.sp, color = Color.Gray)
+                            }
                         }
-                    },
-                    enabled = !isLoading && inputText.isNotBlank() && currentModelId != null
-                ) {
-                    Text("Send")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun MessageBubble(message: ChatMessage) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (message.isUser)
-                MaterialTheme.colorScheme.primaryContainer
-            else
-                MaterialTheme.colorScheme.secondaryContainer
-        )
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = if (message.isUser) "You" else "AI",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = message.text,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-    }
-}
-
-@Composable
-fun ModelSelector(
-    models: List<com.runanywhere.sdk.models.ModelInfo>,
-    currentModelId: String?,
-    onDownload: (String) -> Unit,
-    onLoad: (String) -> Unit,
-    onRefresh: () -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 4.dp
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Available Models",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                TextButton(onClick = onRefresh) {
-                    Text("Refresh")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (models.isEmpty()) {
-                Text(
-                    text = "No models available. Initializing...",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                LazyColumn(
-                    modifier = Modifier.heightIn(max = 300.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(models) { model ->
-                        ModelItem(
-                            model = model,
-                            isLoaded = model.id == currentModelId,
-                            onDownload = { onDownload(model.id) },
-                            onLoad = { onLoad(model.id) }
-                        )
                     }
                 }
+                Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Close") }
             }
         }
-    }
-}
-
-@Composable
-fun ModelItem(
-    model: com.runanywhere.sdk.models.ModelInfo,
-    isLoaded: Boolean,
-    onDownload: () -> Unit,
-    onLoad: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isLoaded)
-                MaterialTheme.colorScheme.tertiaryContainer
-            else
-                MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = model.name,
-                style = MaterialTheme.typography.titleSmall
-            )
-
-            if (isLoaded) {
-                Text(
-                    text = "✓ Currently Loaded",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = onDownload,
-                        modifier = Modifier.weight(1f),
-                        enabled = !model.isDownloaded
-                    ) {
-                        Text(if (model.isDownloaded) "Downloaded" else "Download")
-                    }
-
-                    Button(
-                        onClick = onLoad,
-                        modifier = Modifier.weight(1f),
-                        enabled = model.isDownloaded
-                    ) {
-                        Text("Load")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun DefaultPreview() {
-    Startup_hackathon20Theme {
-        ChatScreen()
     }
 }
